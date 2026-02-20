@@ -1,6 +1,7 @@
 pdf2image
 opencv-python<4.12
-numpy<2
+numpy<2; python_version < "3.13"
+numpy>=2.1,<2.5; python_version >= "3.13"
 pandas
 validators
 imgaug
@@ -15,7 +16,7 @@ python-dotenv
 pytesseract
 tensorflow>=2.20,<2.21
 accelerate
-tf-keras
+tf-keras>=2.20,<2.21
 sentence-transformers
 openai
 qwen-vl-utils
