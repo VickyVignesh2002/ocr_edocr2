@@ -19,3 +19,5 @@ tf-keras
 sentence-transformers
 openai
 qwen-vl-utils
+streamlit
+requests
