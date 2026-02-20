@@ -1,5 +1,6 @@
 pdf2image
-opencv-python
+opencv-python<4.12
+numpy<2
 pandas
 validators
 imgaug
@@ -11,6 +12,10 @@ essential_generators
 editdistance
 pyclipper
 python-dotenv
+pytesseract
+tensorflow>=2.20,<2.21
 accelerate
 tf-keras
 sentence-transformers
+openai
+qwen-vl-utils

@@ -8,3 +8,5 @@
 /washers_results/
 /tests/4132864.jpg
 /__pycache__/
+.venv/
+edocr2.egg-info/

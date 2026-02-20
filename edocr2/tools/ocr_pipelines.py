@@ -1,10 +1,14 @@
-import cv2, math, os
+import cv2, math, os, shutil
 import numpy as np
 
 def read_alphabet(keras_path):
     txt_path = os.path.splitext(keras_path)[0] + '.txt'
-    with open(txt_path, 'r') as file:
-        content = file.readline().strip()
+    try:
+        with open(txt_path, 'r', encoding='utf-8') as file:
+            content = file.readline().strip()
+    except UnicodeDecodeError:
+        with open(txt_path, 'r', encoding='latin-1') as file:
+            content = file.readline().strip()
     return content
 
 ###################### Tables and Others Pipeline #################################
@@ -18,12 +22,31 @@ def ocr_img_cv2(image_cv2, language = None, psm = 11):
         A list of dictionaries containing recognized text and their positions (left, top, width, height).
     """
     import pytesseract
+    if not shutil.which('tesseract'):
+        windows_candidates = [
+            r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+            r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
+            os.path.expandvars(r'%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe')
+        ]
+        for candidate in windows_candidates:
+            if os.path.exists(candidate):
+                pytesseract.pytesseract.tesseract_cmd = candidate
+                break
     # Convert the OpenCV image to RGB format (pytesseract expects this)
     img_rgb = cv2.cvtColor(image_cv2, cv2.COLOR_BGR2RGB)
     
-    # Custom configuration to recognize a more complete set of characters
+    selected_language = language
     if language:
-        custom_config = f'--psm {psm} -l {language}'
+        try:
+            available_languages = set(pytesseract.get_languages(config=''))
+        except Exception:
+            available_languages = set()
+        if language not in available_languages and 'eng' in available_languages:
+            selected_language = 'eng'
+
+    # Custom configuration to recognize a more complete set of characters
+    if selected_language:
+        custom_config = f'--psm {psm} -l {selected_language}'
     else:
         custom_config = f'--psm {psm}'
 
