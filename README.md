@@ -76,7 +76,8 @@ streamlit run streamlit_app.py
 In the app:
 
 1. Upload PNG/JPG/PDF
-2. Choose language and max image size
+2. Enable **High accuracy mode** and **Preprocess image for OCR** for better results
+3. Choose language and max image size
 3. Click **Run OCR**
 4. Download CSV/JSON/TXT/images from buttons
 
@@ -113,6 +114,7 @@ Contains the same artifacts plus:
 - `<stem>_original.png`
 - `<stem>_comparison.png`
 - `ollama_summary.txt` (when Ollama is enabled)
+- `ollama_dimension_results.csv` (when Ollama refinement is enabled)
 
 The app also prints and displays the exact output folder path every run.
 
@@ -120,7 +122,10 @@ The app also prints and displays the exact output folder path every run.
 
 - The OCR app checks TensorFlow GPUs and enables memory growth.
 - If GPU is detected, Streamlit shows GPU status.
-- If not, it falls back to CPU.
+- If not, it falls back to CPU and still runs fully.
+
+Important: on native Windows, TensorFlow GPU support may not be available depending on your install/runtime.
+For highest chance of TensorFlow GPU acceleration, use WSL2 + CUDA configured Python environment.
 
 Verify TensorFlow sees GPU:
 
@@ -140,6 +145,7 @@ In Streamlit:
 
 - Enable **Ollama post-processing**
 - Set model name
+- Enable **Ollama dimension refinement CSV** for an extra pass focused on dimensional values
 - Run OCR
 
 ## 8) Known notes

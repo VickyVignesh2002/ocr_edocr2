@@ -2,6 +2,7 @@ import base64
 import csv
 import json
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -61,6 +62,25 @@ def decode_upload(uploaded_file) -> np.ndarray:
     return image
 
 
+def preprocess_for_ocr(image: np.ndarray, enable: bool, upscale: float) -> np.ndarray:
+    if not enable:
+        return image
+
+    work = image.copy()
+    gray = cv2.cvtColor(work, cv2.COLOR_BGR2GRAY)
+    gray = cv2.fastNlMeansDenoising(gray, h=10)
+    clahe = cv2.createCLAHE(clipLimit=2.2, tileGridSize=(8, 8))
+    gray = clahe.apply(gray)
+
+    if upscale > 1.0:
+        gray = cv2.resize(gray, None, fx=upscale, fy=upscale, interpolation=cv2.INTER_CUBIC)
+
+    sharpen_kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
+    gray = cv2.filter2D(gray, -1, sharpen_kernel)
+
+    return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+
+
 def build_comparison_image(original: np.ndarray, mask: np.ndarray) -> np.ndarray:
     target_h = max(original.shape[0], mask.shape[0])
 
@@ -110,15 +130,52 @@ def call_ollama_vision(model: str, image_bgr: np.ndarray, prompt: str) -> str:
     return response.json().get("message", {}).get("content", "")
 
 
+def extract_json_block(text: str) -> str:
+    fenced = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
+    if fenced:
+        return fenced.group(1)
+    return text
+
+
+def refine_dimensions_with_ollama(model: str, image_bgr: np.ndarray) -> list[dict]:
+    prompt = (
+        "Read this engineering drawing and return ONLY JSON as a list of objects with keys: "
+        "nominal, upper_tol, lower_tol, unit, note. "
+        "If a field is missing use null. No extra text."
+    )
+    raw = call_ollama_vision(model, image_bgr, prompt)
+    parsed = json.loads(extract_json_block(raw))
+    if isinstance(parsed, list):
+        return parsed
+    return []
+
+
 st.title("eDOCr2 Streamlit OCR")
 st.caption("Upload a drawing (PNG/JPG/PDF), run OCR, compare image vs mask, and download CSV/JSON/TXT outputs.")
 
 models_dir = st.text_input("Models directory", value="edocr2/models")
 language = st.text_input("Tesseract language", value="eng")
-max_img_size = st.slider("Max image size (dimension OCR)", min_value=768, max_value=2048, value=1240, step=64)
+high_accuracy = st.checkbox("High accuracy mode (slower)", value=True)
+preprocess = st.checkbox("Preprocess image for OCR", value=True)
+upscale_factor = st.select_slider("Upscale factor", options=[1.0, 1.25, 1.5, 2.0], value=1.5)
+max_img_size = st.slider(
+    "Max image size (dimension OCR)",
+    min_value=768,
+    max_value=3072,
+    value=2048 if high_accuracy else 1240,
+    step=64,
+)
+cluster_thres = st.slider(
+    "Cluster threshold",
+    min_value=8,
+    max_value=30,
+    value=14 if high_accuracy else 20,
+    step=1,
+)
 
-use_ollama = st.checkbox("Enable Ollama post-processing", value=False)
+use_ollama = st.checkbox("Enable Ollama post-processing", value=True)
 ollama_model = st.text_input("Ollama model", value="granite3.2-vision:latest")
+ollama_refine_dimensions = st.checkbox("Use Ollama dimension refinement CSV", value=True)
 ollama_prompt = st.text_area(
     "Ollama prompt",
     value="Summarize key dimensions, tolerances, material references, and potential manufacturability notes from this engineering drawing.",
@@ -134,17 +191,20 @@ if uploaded is not None and st.button("Run OCR", type="primary"):
 
         gpu_msg = "GPU detected and enabled" if model_bundle["gpu_count"] > 0 else "GPU not detected, using CPU"
         st.info(gpu_msg)
+        if model_bundle["gpu_count"] == 0:
+            st.warning("TensorFlow GPU was not detected. OCR core runs on CPU in this environment.")
 
         image = decode_upload(uploaded)
+        image = preprocess_for_ocr(image, preprocess, upscale_factor)
         original_image = image.copy()
 
         with st.spinner("Running segmentation..."):
             _, frame, gdt_boxes, tables, dim_boxes = tools.layer_segm.segment_img(
                 image,
                 autoframe=True,
-                frame_thres=0.7,
+                frame_thres=0.85 if high_accuracy else 0.7,
                 GDT_thres=0.02,
-                binary_thres=127,
+                binary_thres=115 if high_accuracy else 127,
             )
 
         with st.spinner("Running OCR..."):
@@ -166,7 +226,7 @@ if uploaded is not None and st.button("Run OCR", type="primary"):
                 model_bundle["alphabet_dim"],
                 frame,
                 dim_boxes,
-                cluster_thres=20,
+                cluster_thres=cluster_thres,
                 max_img_size=max_img_size,
                 language=language,
                 backg_save=False,
@@ -218,6 +278,7 @@ if uploaded is not None and st.button("Run OCR", type="primary"):
         save_summary_txt(txt_path, payload)
 
         ollama_out_path = None
+        ollama_dim_csv = None
         if use_ollama:
             with st.spinner(f"Running Ollama model {ollama_model}..."):
                 ollama_text = call_ollama_vision(ollama_model, comparison, ollama_prompt)
@@ -226,18 +287,42 @@ if uploaded is not None and st.button("Run OCR", type="primary"):
             st.subheader("Ollama Summary")
             st.text_area("Local model output", value=ollama_text, height=200)
 
+            if ollama_refine_dimensions:
+                try:
+                    with st.spinner("Refining dimensions with Ollama vision model..."):
+                        refined = refine_dimensions_with_ollama(ollama_model, comparison)
+                    if refined:
+                        ollama_dim_csv = output_dir / "ollama_dimension_results.csv"
+                        with ollama_dim_csv.open("w", newline="", encoding="utf-8") as f:
+                            writer = csv.DictWriter(
+                                f,
+                                fieldnames=["nominal", "upper_tol", "lower_tol", "unit", "note"],
+                            )
+                            writer.writeheader()
+                            for row in refined:
+                                writer.writerow({
+                                    "nominal": row.get("nominal"),
+                                    "upper_tol": row.get("upper_tol"),
+                                    "lower_tol": row.get("lower_tol"),
+                                    "unit": row.get("unit"),
+                                    "note": row.get("note"),
+                                })
+                        st.success("Ollama refined dimensions saved.")
+                except Exception as refine_exc:
+                    st.warning(f"Ollama refinement failed: {refine_exc}")
+
         st.success(f"OCR completed. Results saved to: {output_dir.resolve()}")
 
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("Original")
-            st.image(cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB), use_container_width=True)
+            st.image(cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB), width="stretch")
         with col2:
             st.subheader("Mask")
-            st.image(cv2.cvtColor(mask_img, cv2.COLOR_BGR2RGB), use_container_width=True)
+            st.image(cv2.cvtColor(mask_img, cv2.COLOR_BGR2RGB), width="stretch")
 
         st.subheader("Comparison")
-        st.image(cv2.cvtColor(comparison, cv2.COLOR_BGR2RGB), use_container_width=True)
+        st.image(cv2.cvtColor(comparison, cv2.COLOR_BGR2RGB), width="stretch")
 
         st.subheader("Dimension CSV Preview")
         dim_csv_path = output_dir / "dimension_results.csv"
@@ -263,6 +348,8 @@ if uploaded is not None and st.button("Run OCR", type="primary"):
         ]
         if ollama_out_path:
             files_to_download.append(ollama_out_path)
+        if ollama_dim_csv:
+            files_to_download.append(ollama_dim_csv)
 
         for file_path in files_to_download:
             if file_path.exists():
