@@ -29,6 +29,32 @@ Then restart terminal/VS Code once.
 
 ## 2) Clone and setup
 
+### Option A: UV (recommended)
+
+Windows:
+
+```powershell
+winget install --id=astral-sh.uv -e
+git clone https://github.com/VickyVignesh2002/ocr_edocr2.git
+cd ocr_edocr2
+uv venv --python 3.11
+.\.venv\Scripts\Activate.ps1
+uv pip install -r requirements.txt
+```
+
+Linux/Cloud:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+git clone https://github.com/VickyVignesh2002/ocr_edocr2.git
+cd ocr_edocr2
+uv venv --python 3.11
+source .venv/bin/activate
+uv pip install -r requirements.txt
+```
+
+### Option B: pip
+
 ```powershell
 git clone https://github.com/VickyVignesh2002/ocr_edocr2.git
 cd ocr_edocr2
@@ -36,6 +62,12 @@ py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install --upgrade pip
 pip install -r requirements.txt
+```
+
+Using uv, replace package installs with:
+
+```powershell
+uv pip install -r requirements.txt
 ```
 
 ## 3) Download model files
