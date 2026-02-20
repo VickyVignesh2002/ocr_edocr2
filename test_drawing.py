@@ -1,4 +1,4 @@
-import cv2, string, time, os
+import cv2, string, time, os, json
 import numpy as np
 from edocr2 import tools
 from pdf2image import convert_from_path
@@ -12,7 +12,8 @@ else:
     img = cv2.imread(file_path)
 
 filename = os.path.splitext(os.path.basename(file_path))[0]
-output_path = os.path.join('.', filename)
+output_path = os.path.join('results', filename)
+os.makedirs(output_path, exist_ok=True)
 language = 'swe'
 
 #region ############ Segmentation Task ####################
@@ -98,10 +99,34 @@ if qwen:
 start_time = time.time()
 mask_img = tools.output_tools.mask_img(img, updated_gdt_boxes, updated_tables, dimensions, frame, other_info)
 
-table_results, gdt_results, dimensions, other_info = tools.output_tools.process_raw_output(output_path, table_results, gdt_results, dimensions, other_info, save=False)
+table_results, gdt_results, dimensions, other_info = tools.output_tools.process_raw_output(output_path, table_results, gdt_results, dimensions, other_info, save=True)
+
+mask_path = os.path.join(output_path, f"{filename}_mask.png")
+cv2.imwrite(mask_path, mask_img)
+
+json_path = os.path.join(output_path, 'ocr_results.json')
+txt_path = os.path.join(output_path, 'ocr_results.txt')
+payload = {
+    'file_path': file_path,
+    'table_results': table_results,
+    'gdt_results': gdt_results,
+    'dimension_results': dimensions,
+    'other_info': other_info
+}
+with open(json_path, 'w', encoding='utf-8') as json_file:
+    json.dump(payload, json_file, ensure_ascii=False, indent=2)
+
+with open(txt_path, 'w', encoding='utf-8') as txt_file:
+    txt_file.write(f"Input: {file_path}\n")
+    txt_file.write(f"Output folder: {os.path.abspath(output_path)}\n\n")
+    txt_file.write(f"Table rows: {sum(len(t) for t in table_results) if table_results else 0}\n")
+    txt_file.write(f"GD&T items: {len(gdt_results) if gdt_results else 0}\n")
+    txt_file.write(f"Dimension items: {len(dimensions) if dimensions else 0}\n")
+    txt_file.write(f"Other info items: {len(other_info) if other_info else 0}\n")
 
 end_time = time.time()
 print(f"\033[1;33mRaw output generation took {end_time - start_time:.6f} seconds to run.\033[0m")
+print(f"\033[1;32mResults saved to: {os.path.abspath(output_path)}\033[0m")
 #endregion
 
 
