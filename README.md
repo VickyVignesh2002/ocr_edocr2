@@ -1,6 +1,6 @@
 # eDOCr2 (Windows + Streamlit)
 
-Engineering drawing OCR with segmentation, GD&T extraction, dimension OCR, and optional local Ollama post-processing.
+Engineering drawing OCR with segmentation/GD&T extraction in CLI and high-accuracy local Ollama OCR (`glm-ocr:q8_0`) in Streamlit.
 
 ## What is included
 
@@ -16,7 +16,7 @@ Engineering drawing OCR with segmentation, GD&T extraction, dimension OCR, and o
 - Tesseract OCR installed
 - Poppler (`pdftoppm`) installed (for PDF input)
 - Optional GPU for TensorFlow
-- Optional Ollama (for local post-processing)
+- Ollama (required for Streamlit GLM OCR)
 
 ### Install system tools
 
@@ -26,6 +26,12 @@ winget install --id oschwartz10612.Poppler --accept-package-agreements --accept-
 ```
 
 Then restart terminal/VS Code once.
+
+### Ollama model for Streamlit
+
+```powershell
+ollama pull glm-ocr:q8_0
+```
 
 ## 2) Clone and setup
 
@@ -109,9 +115,9 @@ In the app:
 
 1. Upload PNG/JPG/PDF
 2. Enable **High accuracy mode** and **Preprocess image for OCR** for better results
-3. Choose language and max image size
-3. Click **Run OCR**
-4. Download CSV/JSON/TXT/images from buttons
+3. Keep model as `glm-ocr:q8_0` (or set your preferred Ollama OCR model)
+4. Click **Run OCR**
+5. Review extracted datapoints in the table and download CSV/JSON/TXT/images
 
 ## 5) Output locations
 
@@ -144,9 +150,9 @@ results/streamlit/<input_stem>_<timestamp>/
 Contains the same artifacts plus:
 
 - `<stem>_original.png`
-- `<stem>_comparison.png`
-- `ollama_summary.txt` (when Ollama is enabled)
-- `ollama_dimension_results.csv` (when Ollama refinement is enabled)
+- `<stem>_annotated.png`
+- `datapoints.csv`
+- `ollama_raw_response.txt`
 
 The app also prints and displays the exact output folder path every run.
 
@@ -165,23 +171,16 @@ Verify TensorFlow sees GPU:
 python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"
 ```
 
+For Streamlit GLM OCR, inference runs via Ollama; GPU usage depends on your Ollama/runtime setup.
+
 ## 7) Ollama local integration (no OpenAI required)
 
-If Ollama is running locally, Streamlit can call vision model post-processing.
+Streamlit OCR extraction uses Ollama directly (default: `glm-ocr:q8_0`) and outputs structured datapoints.
 
-Start Ollama service and ensure a vision model exists, e.g.:
-
-- `granite3.2-vision:latest`
-
-In Streamlit:
-
-- Enable **Ollama post-processing**
-- Set model name
-- Enable **Ollama dimension refinement CSV** for an extra pass focused on dimensional values
-- Run OCR
+Ensure Ollama service is running locally before starting Streamlit.
 
 ## 8) Known notes
 
 - TensorFlow deprecation messages are warnings, not failures.
 - Large drawings can take long in dimension OCR on CPU.
-- Swedish OCR (`swe`) requires Swedish Tesseract data installed; otherwise app may fallback based on available language packs.
+- For best table accuracy, keep drawing resolution high and keep preprocessing enabled.
